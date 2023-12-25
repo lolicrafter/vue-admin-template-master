@@ -1,3 +1,5 @@
+/* global Cesium */
+
 import { satelliteModel } from './TModels'
 
 export class TCesium {
@@ -10,7 +12,7 @@ export class TCesium {
    * @param {*} dom 节点id
    */
 
-  constructor(dom,moveCallback) {
+  constructor(dom, moveCallback) {
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI4M2Q1OTNmOC1kZWMwLTQ3NDMtOWM5Zi01YjZmMjUzMjI1MjciLCJpZCI6MTg2MTYwLCJpYXQiOjE3MDM0NjQwNTd9.mv1lXD2voJA2Ft0dyEVagcEJ8C8cSbL4EQoga5TNU-s'
     this.viewer = new Cesium.Viewer(dom, {
       homeButton: true, // 是否显示Home按钮
@@ -27,41 +29,44 @@ export class TCesium {
     })
 
     // 矢量图
-    const TDT_SL = new Cesium.WebMapTileServiceImageryProvider({
-      url: 'http://{s}.tianditu.gov.cn/vec_w/wmts?service=wmts&request=GetTile&version=1.0.0&LAYER=vec&tileMatrixSet=w&TileMatrix={TileMatrix}&TileRow={TileRow}&TileCol={TileCol}&style=default&format=tiles&tk=72ae36dc9100e748cced033dfed33952\t\n',
-      layer: 'vec',
-      style: 'default',
-      format: 'tiles',
-      tileMatrixSetID: 'w',
-      subdomains: ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'],
-      maximumLevel: 18
-    })
-    // 添加天地图矢量图 (底图对象，层级) 返回图层
-    this.TDL_YX_LAY = this.viewer.imageryLayers.addImageryProvider(TDT_SL, 1)
+    // const TDT_SL = new Cesium.WebMapTileServiceImageryProvider({
+    //   url: 'http://{s}.tianditu.gov.cn/vec_w/wmts?service=wmts&request=GetTile&version=1.0.0&LAYER=vec&tileMatrixSet=w&TileMatrix={TileMatrix}&TileRow={TileRow}&TileCol={TileCol}&style=default&format=tiles&tk=72ae36dc9100e748cced033dfed33952\t\n',
+    //   layer: 'vec',
+    //   style: 'default',
+    //   format: 'tiles',
+    //   tileMatrixSetID: 'w',
+    //   subdomains: ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'],
+    //   maximumLevel: 18
+    // })
+    // // 添加天地图矢量图 (底图对象，层级) 返回图层
+    // this.TDL_YX_LAY = this.viewer.imageryLayers.addImageryProvider(TDT_SL, 1)
     // 影像图
     this.viewer._cesiumWidget._creditContainer.style.display = 'none'
     this.viewer.scene.postProcessStages.fxaa.enabled = true // 开启抗锯齿
     this.viewer.scene.globe.depthTestAgainstTerrain = true // 地形遮挡
     this.scene = this.viewer.scene
+    // 开启地形深度检测
     this.addTerrain()
+    // 添加天地图影像注记底图
+    // this.addTMap(this.viewer, 'vec')
+    // this.addTMap(this.viewer, 'cva')
+    this.addTMap(this.viewer, 'img')
+    this.addTMap(this.viewer, 'cia')
     // 比如说两秒之后，视角移动到目标区域
     setTimeout(() => {
       // 相机视角移动至目标位置
       this.flyToTarget(117.000923, 36.675807, 12000000, 0, -90, 0, 2)
       this.addModel('wjw-001', '测试模型', 117, 36, 100000, 0, 0, 0)
     }, 2000)
+    this.addRectangle()
 
     // 监听地图点击事件
-
     const handler = new Cesium.ScreenSpaceEventHandler(this.viewer.scene.canvas)
     // 左键点击事件
     const leftclick = Cesium.ScreenSpaceEventType.LEFT_CLICK
-
-    let mouseMove = Cesium.ScreenSpaceEventType.MOUSE_MOVE;
-
+    const mouseMove = Cesium.ScreenSpaceEventType.MOUSE_MOVE
     this.viewer.screenSpaceEventHandler.removeInputAction(leftclick)
     this.viewer.screenSpaceEventHandler.removeInputAction(mouseMove)
-
     handler.setInputAction((click) => {
       // 获取点击位置笛卡尔坐标
       const cartesian = this.viewer.camera.pickEllipsoid(click.position, this.viewer.scene.globe.ellipsoid)
@@ -319,7 +324,7 @@ export class TCesium {
         position: Cesium.Cartesian3.fromDegrees(
           pointObj.longitude * 1,
           pointObj.latitude * 1,
-          1
+          10
         ),
         // 点
         // point: {
@@ -337,17 +342,99 @@ export class TCesium {
           // fillColor: Cesium.Color.LIME,
           fillColor: Cesium.Color.fromCssColorString(_textColor),
           outlineWidth: 4,
+          // verticalOrigin: Cesium.VerticalOrigin.TOP, // 垂直方向以底部来计算标签的位置
           verticalOrigin: Cesium.VerticalOrigin.BOTTOM, // 垂直方向以底部来计算标签的位置
-          pixelOffset: new Cesium.Cartesian2(0, -20) // 偏移量
+          pixelOffset: new Cesium.Cartesian2(0, -30), // 偏移量
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND // 高度参考
         },
         // 图标
         billboard: {
           verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, // 高度参考
           image: require('@/assets/imgs/point.png'),
           width: 18,
           height: 24
         }
       })
     })
+  }
+
+  // type TMapType = 'vec' | 'cva' | 'img' | 'cia' | 'ter' | 'cta' | 'ibo' | 'eva' | 'eia'
+  /**
+   * 为cesimu添加天地图的底图
+   * @param viewer cesium viewer
+   * @param layer vec：矢量底图、cva：矢量标注、img：影像底图、cia：影像标注 ter：地形晕渲、cta：地形标注、eva：矢量英文标注、eia：影像英文标注
+   */
+  addTMap(viewer, layer) {
+    // 添加天地图影像注记底图
+    const tMapImagery = new Cesium.WebMapTileServiceImageryProvider({
+      url: `http://t0.tianditu.gov.cn/${layer}_w/wmts?tk=72ae36dc9100e748cced033dfed33952`,
+      layer,
+      style: 'default',
+      tileMatrixSetID: 'w',
+      format: 'tiles',
+      maximumLevel: 18
+    })
+    viewer.imageryLayers.addImageryProvider(tMapImagery)
+  }
+
+  /**
+   * 添加矩形区域
+   */
+  addRectangle() {
+    // 指定矩形的中心经纬度坐标
+    const centerLongitude = 117.2
+    const centerLatitude = 31.85
+
+    // 指定矩形的宽度和高度（这里是 20m x 20m）
+    const rectangleWidth = 200.0 / (111319.9 * Math.cos(centerLatitude * Math.PI / 180)) // 将20m转换为经度差
+    const rectangleHeight = 200.0 / 111319.9 // 将20m转换为纬度差
+
+    // 计算矩形的边界坐标
+    const west = centerLongitude - rectangleWidth / 2.0
+    const south = centerLatitude - rectangleHeight / 2.0
+    const east = centerLongitude + rectangleWidth / 2.0
+    const north = centerLatitude + rectangleHeight / 2.0
+
+    // 创建矩形实体
+    const rectangleEntity = this.viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(
+        (west + east) / 2, // 计算中心点的经度
+        (south + north) / 2, // 计算中心点的纬度
+        10 // 适当的高度
+      ),
+      name: '测试矩形区域',
+      code: '测试矩形区域',
+      id: '测试矩形区域',
+      // 文字标签
+      label: {
+        // show: false,
+        text: '测试矩形区域',
+        font: '14px monospace',
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        // fillColor: Cesium.Color.LIME,
+        fillColor: Cesium.Color.fromCssColorString('rgb(11, 255, 244)'),
+        outlineWidth: 4,
+        // verticalOrigin: Cesium.VerticalOrigin.TOP, // 垂直方向以底部来计算标签的位置
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM, // 垂直方向以底部来计算标签的位置
+        pixelOffset: new Cesium.Cartesian2(0, -30), // 偏移量
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND // 高度参考
+      },
+      // 图标
+      billboard: {
+        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, // 高度参考
+        image: require('@/assets/imgs/point.png'),
+        width: 18,
+        height: 24
+      },
+      rectangle: {
+        coordinates: Cesium.Rectangle.fromDegrees(west, south, east, north),
+        material: Cesium.Color.RED.withAlpha(0.5), // 设置矩形的颜色和透明度
+        outline: true,
+        outlineColor: Cesium.Color.BLACK
+      }
+    })
+    this.viewer.zoomTo(rectangleEntity)
   }
 }

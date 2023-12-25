@@ -1,9 +1,11 @@
+/* global Cesium */
 /**
  * 普通卫星模型
  * @param id 模型唯一标识ID
  * @param position 位置信息
  * @param orientation 方向信息
  * @param description 模型描述
+ * @param modelData 模型自定义数据
  * @returns {{orientation, description, model: {minimumPixelSize: number, show: boolean, scale: number, maximumSize: number, uri: string}, id, position}}
  */
 export const satelliteModel = function(id, position, orientation, description, modelData) {
