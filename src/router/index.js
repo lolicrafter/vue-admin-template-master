@@ -87,6 +87,10 @@ export const constantRoutes = [
       }
     ]
   },
+  {
+    path: '/cesium',
+    component: () => import('@/views/cesium/index.vue')
+  },
   // {
   //   path: '/',
   //   component: Layout,
