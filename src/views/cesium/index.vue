@@ -52,15 +52,22 @@ export default {
       position: {
         latitude: 0,
         longitude: 0
+      },
+      clickPosition: {
+        latitude: 0,
+        longitude: 0
       }
     }
   },
   mounted() {
     this.initMap()
   },
+  beforeDestroy() {
+    this.mapObject.removeHandler()
+  },
   methods: {
     initMap() {
-      this.mapObject = new TCesium('my-map', this.moveCallback)
+      this.mapObject = new TCesium('my-map', this.moveCallback, this.clickPCallback)
       setTimeout(() => {
         this.loadPoints()
       }, 2000)
@@ -69,6 +76,15 @@ export default {
       // console.log('moveCallback----longitude, latitude😊===》', longitude, latitude)
       this.position.latitude = latitude
       this.position.longitude = longitude
+    },
+    clickPCallback(longitude, latitude) {
+      // console.log('moveCallback----longitude, latitude😊===》', longitude, latitude)
+      this.clickPosition.latitude = latitude
+      this.clickPosition.longitude = longitude
+      this.$message({
+        message: `点击位置：${longitude},${latitude}`,
+        type: 'success'
+      })
     },
     /**
      * 移除天地图图层

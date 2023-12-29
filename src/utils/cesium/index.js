@@ -6,13 +6,18 @@ export class TCesium {
   viewer = null;
   scene = null;
   TDL_YX_LAY = null;
+  moveCallback;
+  clickPCallback;
+  contextMenuHandler;
 
   /**
    * 构造器函数：实例化cesium
    * @param {*} dom 节点id
    */
 
-  constructor(dom, moveCallback) {
+  constructor(dom, moveCallback, clickPCallback) {
+    this.moveCallback = moveCallback
+    this.clickPCallback = clickPCallback
     Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI4M2Q1OTNmOC1kZWMwLTQ3NDMtOWM5Zi01YjZmMjUzMjI1MjciLCJpZCI6MTg2MTYwLCJpYXQiOjE3MDM0NjQwNTd9.mv1lXD2voJA2Ft0dyEVagcEJ8C8cSbL4EQoga5TNU-s'
     this.viewer = new Cesium.Viewer(dom, {
       homeButton: true, // 是否显示Home按钮
@@ -55,30 +60,44 @@ export class TCesium {
     // 比如说两秒之后，视角移动到目标区域
     setTimeout(() => {
       // 相机视角移动至目标位置
-      this.flyToTarget(117.000923, 36.675807, 12000000, 0, -90, 0, 2)
+      this.flyToTarget(117.2001357238927, 31.84962713505064, 1200, 0, -90, 0, 1)
       this.addModel('wjw-001', '测试模型', 117, 36, 100000, 0, 0, 0)
     }, 2000)
     this.addRectangle()
-
     // 监听地图点击事件
-    const handler = new Cesium.ScreenSpaceEventHandler(this.viewer.scene.canvas)
     // 左键点击事件
-    const leftclick = Cesium.ScreenSpaceEventType.LEFT_CLICK
-    const mouseMove = Cesium.ScreenSpaceEventType.MOUSE_MOVE
-    this.viewer.screenSpaceEventHandler.removeInputAction(leftclick)
-    this.viewer.screenSpaceEventHandler.removeInputAction(mouseMove)
+    this.removeHandler()
+    this.addHandler()
+  }
+
+  /**
+   * 添加监听
+   */
+  addHandler() {
+    const handler = new Cesium.ScreenSpaceEventHandler(this.viewer.scene.canvas)
     handler.setInputAction((click) => {
       // 获取点击位置笛卡尔坐标
       const cartesian = this.viewer.camera.pickEllipsoid(click.position, this.viewer.scene.globe.ellipsoid)
       if (cartesian) {
+        this.deleteEntitiesByName('projectLocation')
         // 将笛卡尔坐标转换为地理坐标（经纬度）
         const cartographic = Cesium.Cartographic.fromCartesian(cartesian)
         // 获取经纬度
         const longitude = Cesium.Math.toDegrees(cartographic.longitude)
         const latitude = Cesium.Math.toDegrees(cartographic.latitude)
+        // 创建一个新的实体，表示图标
+        const obj = {
+          id: new Date().getTime(),
+          name: 'projectLocation',
+          latitude: latitude,
+          longitude: longitude,
+          psName: `测试点位${Math.random() * 100}`
+        }
+        this.addMarker([obj])
         console.log('longitude, latitude', longitude, latitude)
+        this.clickPCallback(longitude, latitude)
       }
-    }, leftclick)
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK)
     handler.setInputAction((click) => {
       // 获取点击位置笛卡尔坐标
       const cartesian = this.viewer.camera.pickEllipsoid(click.endPosition, this.viewer.scene.globe.ellipsoid)
@@ -89,9 +108,121 @@ export class TCesium {
         const longitude = Cesium.Math.toDegrees(cartographic.longitude)
         const latitude = Cesium.Math.toDegrees(cartographic.latitude)
         // console.log('longitude, latitude', longitude, latitude)
-        moveCallback(longitude, latitude)
+        this.moveCallback(longitude, latitude)
       }
-    }, mouseMove)
+    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE)
+    handler.setInputAction((movement) => {
+      // 获取鼠标点击的位置
+      const pickedObject = this.viewer.scene.pick(movement.position)
+      console.log('pickedObject😊===》', pickedObject.id.name, pickedObject.id.id, pickedObject.id._label._text._value)
+      console.log('pickedObject😊===》', pickedObject)
+      // console.log('pickedObject------id😊===》', JSON.stringify(pickedObject.id))
+      // 判断是否点击到了点位
+      if (Cesium.defined(pickedObject) && pickedObject.id && pickedObject.id.name === 'projectLocation') {
+        // console.log('pickedObject😊===》', pickedObject.id.name)
+
+        // 获取点击到的 Entity 的坐标
+        const entityPosition = pickedObject.id.position.getValue()
+
+        // 将地理坐标转换为像素坐标
+        const canvasPosition = this.viewer.scene.cartesianToCanvasCoordinates(entityPosition)
+
+        // 获取像素坐标
+        const pixelX = canvasPosition.x
+        const pixelY = canvasPosition.y
+        const position = {
+          x: pixelX,
+          y: pixelY
+        }
+        // 获取点击到的 Entity 的 id
+        const entityId = pickedObject.id.id
+        // 弹出删除菜单
+        this.showContextMenu(position, entityId)
+        console.log('position, entityId', position, entityId)
+      }
+    }, Cesium.ScreenSpaceEventType.RIGHT_CLICK)
+  }
+
+  /**
+   * 删除所有 name 为指定值的 Entity
+   */
+  deleteEntitiesByName(name) {
+    // 获取所有的 Entity
+    const allEntities = this.viewer.entities.values
+    // 遍历所有 Entity
+    allEntities.forEach((entity) => {
+      // 判断 Entity 是否符合条件
+      if (entity.name === name) {
+        // 从 viewer.entities 中移除符合条件的 Entity
+        this.viewer.entities.remove(entity)
+      }
+    })
+  }
+  /**
+   * 卸载监听
+   */
+  removeHandler() {
+    this.viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_CLICK)
+    this.viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.MOUSE_MOVE)
+    this.viewer.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.RIGHT_CLICK)
+    this.removeContextMenuListener()
+  }
+  /**
+   * 移除右键菜单的事件监听器
+   */
+  removeContextMenuListener() {
+    if (this.contextMenuHandler) {
+      document.removeEventListener('click', this.contextMenuHandler)
+    }
+  }
+
+  /**
+   * 自定义删除菜单的显示方法
+   */
+  showContextMenu(position, entityIdToDelete) {
+    // 创建菜单
+    const menuElement = document.createElement('div')
+    menuElement.className = 'menu'
+    menuElement.innerHTML = '删除点位'
+    menuElement.style.position = 'absolute'
+    menuElement.style.left = position.x + 'px'
+    menuElement.style.top = position.y + 'px'
+    menuElement.style.backgroundColor = 'white'
+    menuElement.style.padding = '5px'
+    menuElement.style.border = '1px solid #ccc'
+    menuElement.style.borderRadius = '4px'
+    menuElement.style.boxShadow = '0 0 4px rgba(0,0,0,0.2)'
+    menuElement.style.cursor = 'pointer'
+
+    // 添加菜单到 DOM 中
+    document.body.appendChild(menuElement)
+    // 定义点击事件处理函数
+    const handleMenuClick = (e) => {
+      // 判断点击的是否为删除菜单
+      if (e.target.innerHTML === '删除点位') {
+        console.log('删除点位😊===》')
+        // 删除点位
+        // 获取要删除的 Entity
+        const entityToDelete = this.viewer.entities.getById(entityIdToDelete)
+
+        console.log('entityToDelete😊===》', entityToDelete)
+        console.log('Cesium.defined(entityToDelete)😊===》', Cesium.defined(entityToDelete))
+        // 判断 Entity 是否存在
+        if (Cesium.defined(entityToDelete)) {
+          // 从 viewer.entities 中移除指定的 Entity
+          this.viewer.entities.remove(entityToDelete)
+        } else {
+          // 如果 Entity 不存在，可以在控制台输出一条消息
+          console.warn(`Entity with id '${entityIdToDelete}' not found.`)
+        }
+      }
+      // 移除菜单
+      document.body.removeChild(menuElement)
+    }
+    // 添加点击事件监听器
+    menuElement.addEventListener('click', handleMenuClick)
+    // 将 handleMenuClick 方法保存到组件实例的变量中
+    this.contextMenuHandler = handleMenuClick
   }
 
   /**
@@ -107,6 +238,58 @@ export class TCesium {
   }
 
   /**
+   * 计算中心点
+   * lon 经度
+   * lat 纬度
+   * brng 俯视角
+   * dist 距离
+   */
+  getCenterLatlng(lng, lat, brng, dist) {
+    // brng = -brng
+    dist = 8000 / Math.tan(90 * Math.PI / 180)
+    const a = 6378137
+    const b = 6356752.3142
+    const f = 1 / 298.257223563
+    const lon1 = lng * 1
+    const lat1 = lat * 1
+    const s = dist
+    const alpha1 = brng * (Math.PI / 180)
+    const sinAlpha1 = Math.sin(alpha1)
+    const cosAlpha1 = Math.cos(alpha1)
+    const tanU1 = (1 - f) * Math.tan(lat1 * (Math.PI / 180))
+    const cosU1 = 1 / Math.sqrt((1 + tanU1 * tanU1)); const sinU1 = tanU1 * cosU1
+    const sigma1 = Math.atan2(tanU1, cosAlpha1)
+    const sinAlpha = cosU1 * sinAlpha1
+    const cosSqAlpha = 1 - sinAlpha * sinAlpha
+    const uSq = cosSqAlpha * (a * a - b * b) / (b * b)
+    const A = 1 + uSq / 16384 * (4096 + uSq * (-768 + uSq * (320 - 175 * uSq)))
+    const B = uSq / 1024 * (256 + uSq * (-128 + uSq * (74 - 47 * uSq)))
+    let sigma = s / (b * A); let sigmaP = 2 * Math.PI
+    while (Math.abs(sigma - sigmaP) > 1e-12) {
+      var cos2SigmaM = Math.cos(2 * sigma1 + sigma)
+      var sinSigma = Math.sin(sigma)
+      var cosSigma = Math.cos(sigma)
+      var deltaSigma = B * sinSigma * (cos2SigmaM + B / 4 * (cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM) -
+        B / 6 * cos2SigmaM * (-3 + 4 * sinSigma * sinSigma) * (-3 + 4 * cos2SigmaM * cos2SigmaM)))
+      sigmaP = sigma
+      sigma = s / (b * A) + deltaSigma
+    }
+
+    const tmp = sinU1 * sinSigma - cosU1 * cosSigma * cosAlpha1
+    const lat2 = Math.atan2(sinU1 * cosSigma + cosU1 * sinSigma * cosAlpha1,
+      (1 - f) * Math.sqrt(sinAlpha * sinAlpha + tmp * tmp))
+    const lambda = Math.atan2(sinSigma * sinAlpha1, cosU1 * cosSigma - sinU1 * sinSigma * cosAlpha1)
+    const C = f / 16 * cosSqAlpha * (4 + f * (4 - 3 * cosSqAlpha))
+    const L = lambda - (1 - C) * f * sinAlpha *
+      (sigma + C * sinSigma * (cos2SigmaM + C * cosSigma * (-1 + 2 * cos2SigmaM * cos2SigmaM)))
+
+    // const revAz = Math.atan2(sinAlpha, -tmp) // final bearing
+
+    const lngLatObj = { lng: lon1 + L * (180 / Math.PI), lat: lat2 * (180 / Math.PI) }
+    return lngLatObj
+  }
+
+  /**
    * 相机视角移动函数 - by wjw
    * @param lon 目标经度
    * @param lat 目标纬度
@@ -116,15 +299,26 @@ export class TCesium {
    * @param roll   距中心的距离，以米为单位
    * @param duration  飞行时间
    */
-  flyToTarget(lon, lat, height, heading, pitch, roll, duration) {
+  flyToTarget(lng, lat, height, heading, pitch, roll, duration) {
+    // const newCenter = this.getCenterLatlng(lon, lat, pitch, height)
+    // console.log('newCenter😊===》', newCenter)
+    const that_ = this
     this.viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(lon, lat, height), // 经纬度以及相机离地高度
+      destination: Cesium.Cartesian3.fromDegrees(lng, lat, height), // 经纬度以及相机离地高度
       orientation: {
         heading: Cesium.Math.toRadians(heading), // 航向角
         pitch: Cesium.Math.toRadians(pitch), // 俯仰角
         roll: roll // 距中心的距离，以米为单位
       },
-      duration: duration // 飞行时间
+      duration: duration, // 飞行时间
+      complete: function() {
+        console.log('this.viewer😊===》', that_.viewer)
+        // 飞行结束后，将相机移动到新的中心点
+        // if (newCenter && that_.viewer) {
+        //   console.log('飞行结束后，将相机移动到新的中心点😊===》')
+        //   // that_.viewer.camera.lookAt(newCenter, new Cesium.Cartesian3(0.0, 0.0, height))
+        // }
+      }
     })
   }
 
@@ -318,7 +512,7 @@ export class TCesium {
     // foreach循环加载点位
     pointInfo.forEach((pointObj) => {
       this.viewer.entities.add({
-        name: pointObj.psName,
+        name: pointObj.name,
         code: pointObj.id,
         id: pointObj.id,
         position: Cesium.Cartesian3.fromDegrees(
